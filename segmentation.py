@@ -24,6 +24,11 @@ def get_image_from_bytes(binary_image, max_size=416):
     )
     return resized_image
 
+def get_meter():
+    model = torch.hub.load('./yolov5', 'custom', path='./model/best_meter_detection_m.pt', source='local')  # local repo
+    model.conf = 0.3
+    return model
+
 def get_meter_component():
     model = torch.hub.load('./yolov5', 'custom', path='./model/best_meter_component_x.pt', source='local')  # local repo
     model.conf = 0.2
@@ -32,10 +37,10 @@ def get_meter_component():
 
 def get_kwhr():
     model = torch.hub.load('./yolov5', 'custom', path='./model/best_kwhr.pt', source='local')  # local repo
-    model.conf = 0.2
+    model.conf = 0.3
     return model
 
 def get_number():
     model = torch.hub.load('./yolov5', 'custom', path='./model/best_meter_number_x.pt', source='local')  # local repo
-    model.conf = 0.2
+    model.conf = 0.3
     return model
