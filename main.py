@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File
-from segmentation import get_yolov5, get_image_from_bytes, get_meter_component, get_kwhr, get_number,get_meter
+from segmentation import get_yolov5, get_image_from_bytes, get_meter_component, get_kwhr, get_number,get_meter, get_image_from_url
 from starlette.responses import Response
 import io
 from PIL import Image
@@ -199,12 +199,32 @@ async def detect_meter_kwhr_return_json_result(file: bytes = File(...)):
     else:
         return {"result": " no kwhr data"}
 
+def get_xy(dict_res, class_name):
+    print(dict_res)
+    print(class_name)
+    for res in dict_res:
+        if res['name']==class_name:
+            return res['ymax'], res['ymin'], res['xmin'], res['xmax'], True
+    return '_', '_','_','_', False
 
+
+def model_return_json(_model, _input_img, loc, img1='crop_meter.jpg', img2='resize_crop_meter.jpg', img_size=(416,416)):
+    _croped_img = _input_img.crop(loc)
+    _croped_img.save(img1)
+    _croped_img = _croped_img.resize(img_size)
+    _croped_img.save(img2)
+    results = _model(_croped_img, size=416)
+    _detect_res = results.pandas().xyxy[0].to_json(orient="records")  # JSON img1 predictions
+    _detect_res = json.loads(_detect_res)
+    return _croped_img, _detect_res
+    
 
 @app.post("/extract_data")
 async def detect_meter_data_return_json_result(file: bytes = File(...)):
     # detect meter component
     input_image = get_image_from_bytes(file)
+
+
     input_size = (416, 416)
     input_image = input_image.resize(input_size)
     input_image.save("1_input_image.jpg")
@@ -212,55 +232,29 @@ async def detect_meter_data_return_json_result(file: bytes = File(...)):
     detect_res = results.pandas().xyxy[0].to_json(orient="records")  # JSON img1 predictions
     detect_res = json.loads(detect_res)
     meter_detect=False
-    for res in detect_res:
-        if res['name']=='meter':
-            ymin_meter=res['ymax']
-            ymax_meter=res['ymin']
-            xmin_meter=res['xmin']
-            xmax_meter=res['xmax']
-            meter_detect=True
+
+    ymin_meter, ymax_meter, xmin_meter, xmax_meter, meter_detect=get_xy(detect_res,'meter')
+
 
     if (not meter_detect):
         return {"result": " no meter detected"}
     else:
-        croped_meter = input_image.crop((xmin_meter, ymax_meter, xmax_meter, ymin_meter))
-        croped_meter.save("2_croped_meter.jpg")
-        meter_size=(416, 416)
-        croped_meter = croped_meter.resize(meter_size)
-        croped_meter.save("3_croped_meter2.jpg")
+        loc=(xmin_meter, ymax_meter, xmax_meter, ymin_meter)
+        croped_meter, detect_res= model_return_json(model_meter_component, input_image, loc, img1='2_croped_meter.jpg', img2='3_croped_meter2.jpg', img_size=(416,416))
 
-        results = model_meter_component(croped_meter, size=416)
-        detect_res = results.pandas().xyxy[0].to_json(orient="records")  # JSON img1 predictions
-        detect_res = json.loads(detect_res)
         number_detect=False
         kwhr_detect=False
-        for res in detect_res:
-            if res['name']=='kwhr':
-                ymin_kwhr=res['ymax']
-                ymax_kwhr=res['ymin']
-                xmin_kwhr=res['xmin']
-                xmax_kwhr=res['xmax']
-                kwhr_detect=True
-            elif res['name']=='meter_no':
-                ymin_num=res['ymax']
-                ymax_num=res['ymin']
-                xmin_num=res['xmin']
-                xmax_num=res['xmax']
-                number_detect=True
+
+        ymin_kwhr, ymax_kwhr, xmin_kwhr, xmax_kwhr, kwhr_detect=get_xy(detect_res,'kwhr')
+        ymin_num, ymax_num, xmin_num, xmax_num, number_detect=get_xy(detect_res,'meter_no')
+
         list_kwhr=[]
         #if kwhr_component exists
         if (kwhr_detect):
-            # crop image
-            croped_kwhr = croped_meter.crop((xmin_kwhr, ymax_kwhr, xmax_kwhr, ymin_kwhr))
-            croped_kwhr.save("4_croped_kwhr.jpg")
-            kwhr_size = (416, 416)
-            croped_kwhr = croped_kwhr.resize(kwhr_size)
-            croped_kwhr.save("5_croped_kwhr2.jpg")
-            # get kwhr
-            results = model_kwhr(croped_kwhr, size=416)
-            detect_res = results.pandas().xyxy[0].to_json(orient="records")  # JSON img1 predictions
-            detect_res = json.loads(detect_res)
-            # re-arange
+            loc=(xmin_kwhr, ymax_kwhr, xmax_kwhr, ymin_kwhr)
+            _, detect_res= model_return_json(model_kwhr, croped_meter, loc, img1='4_croped_kwhr.jpg', img2='5_croped_kwhr2.jpg', img_size=(416,416))
+
+
             res={}
             for item in detect_res:
                 res[item['xmin']]=item['name']
@@ -270,18 +264,62 @@ async def detect_meter_data_return_json_result(file: bytes = File(...)):
         
         list_no=[]
         if (number_detect):
-            # crop image
-            croped_number = croped_meter.crop((xmin_num, ymax_num, xmax_num, ymin_num))
-            croped_number.save("6_croped_number.jpg")
-            # resize image to 416x416 here
-            number_size = (416, 416)
-            croped_number = croped_number.resize(number_size)
-            croped_number.save("7_croped_number2.jpg")
-            # get kwhr
-            results = model_number(croped_number, size=416)
-            detect_res = results.pandas().xyxy[0].to_json(orient="records")  # JSON img1 predictions
-            detect_res = json.loads(detect_res)
-            # re-arange
+            loc=(xmin_num, ymax_num, xmax_num, ymin_num)
+            _, detect_res= model_return_json(model_number, croped_meter, loc, img1='6_croped_number.jpg', img2='7_croped_number2.jpg', img_size=(416,416))
+
+
+
+            res={}
+            for item in detect_res:
+                res[item['xmin']]=item['name']
+            list_xmin= sorted(res)
+            for _xmin in list_xmin:
+                list_no.append(res[_xmin])
+        return {"result": {"kwhr":list_kwhr, "no":list_no}}
+
+
+@app.post("/extract_data_from_url")
+async def detect_meter_data_return_json_result(url: str = File(...)):
+    # detect meter component
+    # url='http://94.74.115.223/uploads/electric-meter/scaled_77ecefbb-4d77-41fc-9f5a-970b1b5a79ec3625275333049432296-c34c2d3f-8aec-4935-bd0b-0c17a42a45ef.jpg'
+    input_image = get_image_from_url(url)
+
+    # prefix_path="http://94.74.115.223/"
+    # im = Image.open(requests.get(prefix_path+"uploads/electric-meter/scaled_f8b38b8a-a0a7-4cb8-b598-7d11d5745c1c413712555478209381-bfba8e8a-233b-41cf-ae8c-0458219bbf5b.jpg", stream=True).raw)
+
+    
+    input_size = (416, 416)
+    input_image = input_image.resize(input_size)
+    input_image.save("1_input_image.jpg")
+    results=model_meter(input_image, size=416)
+    detect_res = results.pandas().xyxy[0].to_json(orient="records")  # JSON img1 predictions
+    detect_res = json.loads(detect_res)
+    meter_detect=False
+    ymin_meter, ymax_meter, xmin_meter, xmax_meter, meter_detect=get_xy(detect_res,'meter')
+    if (not meter_detect):
+        return {"result": " no meter detected"}
+    else:
+        loc=(xmin_meter, ymax_meter, xmax_meter, ymin_meter)
+        croped_meter, detect_res= model_return_json(model_meter_component, input_image, loc, img1='2_croped_meter.jpg', img2='3_croped_meter2.jpg', img_size=(416,416))
+        number_detect=False
+        kwhr_detect=False
+        ymin_kwhr, ymax_kwhr, xmin_kwhr, xmax_kwhr, kwhr_detect=get_xy(detect_res,'kwhr')
+        ymin_num, ymax_num, xmin_num, xmax_num, number_detect=get_xy(detect_res,'meter_no')
+        list_kwhr=[]
+        #if kwhr_component exists
+        if (kwhr_detect):
+            loc=(xmin_kwhr, ymax_kwhr, xmax_kwhr, ymin_kwhr)
+            _, detect_res= model_return_json(model_kwhr, croped_meter, loc, img1='4_croped_kwhr.jpg', img2='5_croped_kwhr2.jpg', img_size=(416,416))
+            res={}
+            for item in detect_res:
+                res[item['xmin']]=item['name']
+            list_xmin= sorted(res)
+            for _xmin in list_xmin:
+                list_kwhr.append(res[_xmin])
+        list_no=[]
+        if (number_detect):
+            loc=(xmin_num, ymax_num, xmax_num, ymin_num)
+            _, detect_res= model_return_json(model_number, croped_meter, loc, img1='6_croped_number.jpg', img2='7_croped_number2.jpg', img_size=(416,416))
             res={}
             for item in detect_res:
                 res[item['xmin']]=item['name']
