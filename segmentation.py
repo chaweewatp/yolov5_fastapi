@@ -24,7 +24,7 @@ def get_image_from_bytes(binary_image, max_size=416):
     )
     return resized_image
 
-def get_image_from_url(url, max_size=416):
+def get_image_from_url(url, max_size=2048):
     input_image = Image.open(requests.get(url, stream=True).raw).convert("RGB")
     width, height = input_image.size
     resize_factor = min(max_size / width, max_size / height)
