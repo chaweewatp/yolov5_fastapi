@@ -10,7 +10,7 @@ def get_yolov5():
     return model
 
 
-def get_image_from_bytes(binary_image, max_size=416):
+def get_image_from_bytes(binary_image, max_size=2048):
     input_image = Image.open(io.BytesIO(binary_image)).convert("RGB")
     # input_image = Image.open(io.BytesIO(binary_image))
 
